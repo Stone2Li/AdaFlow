@@ -26,10 +26,9 @@ class CustomDataset(Dataset):
         return self.data[idx], self.labels[idx]
 
 
-def train_flow_matching(config: str, data, labels, i, iterations=10):
+def train_flow_matching(config: str, data, labels, i, k,iterations=10,):
     """训练Flow Matching模型"""
     # 获取配置
-    seq_len = config.get('seq_len', 1000)
     hidden_dim = config.get('hidden_dim', 128)
     num_heads = config.get('num_heads', 8)
     num_layers = config.get('num_layers', 6)
@@ -50,7 +49,8 @@ def train_flow_matching(config: str, data, labels, i, iterations=10):
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     input_dim = 1
-    output_dim = 1000
+    output_dim = k
+    seq_len = k
     model = Flow_Matching(seq_len, input_dim, hidden_dim, num_heads, num_layers, output_dim).to(device)
 
     # 损失函数和优化器
@@ -80,8 +80,8 @@ def train_flow_matching(config: str, data, labels, i, iterations=10):
             optimizer.zero_grad()
 
             # 前向传播
-            v_pred = model(x_t, t, labels)
-            loss = F.mse_loss(x_1-x_0, v_pred.unsqueeze(2))
+            v_pred = model(x_t, t, labels, seq_len=k)
+            loss = F.mse_loss(x_1-x_0, v_pred)
 
             # 反向传播
             loss.backward()
