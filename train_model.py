@@ -44,7 +44,10 @@ def train_flow_matching(config: str, data, labels, i, iterations=10):
         batch_size = (i+1)*base_batch_size
     else:
         batch_size = 64
-    epochs = epochs + i* 5
+    if epochs + i*5 <30:
+        epochs = epochs + i* 5
+    else:
+        epochs = 30
     # 创建数据集和数据加载器
     dataset = CustomDataset(data, labels)
     train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -81,7 +84,7 @@ def train_flow_matching(config: str, data, labels, i, iterations=10):
 
             # 前向传播
             v_pred = model(x_t, t, labels)
-            loss = F.mse_loss(x_1-x_0, v_pred.unsqueeze(2))
+            loss = F.mse_loss(x_1-x_0, v_pred)
 
             # 反向传播
             loss.backward()

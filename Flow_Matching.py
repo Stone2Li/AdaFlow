@@ -38,24 +38,24 @@ class Flow_Matching(nn.Module):
         self.layers = nn.ModuleList([AttentionBlock(hidden_dim, num_heads) for _ in range(num_layers)])
 
         # 输出层
-        self.fc_out = nn.Sequential(nn.Linear(hidden_dim, 512),
+        self.fc_out = nn.Sequential(nn.Linear(hidden_dim, hidden_dim//2),
                                     nn.ReLU(),
-                                    nn.Linear(512, output_dim))
+                                    nn.Linear(hidden_dim//2, input_dim))
 
     def time_emb(self,t,dim=1000):
         t = t * 1000
         # 10000^k k=torch.linspace……
-        freqs = torch.pow(10000, torch.linspace(0, 1, dim // 2)).to(t.device)
+        freqs = torch.pow(10000, torch.linspace(0, 1, dim // 2 + dim % 2)).to(t.device)
         sin_emb = torch.sin(t[:, None] / freqs)
         cos_emb = torch.cos(t[:, None] / freqs)
-        return torch.cat([sin_emb, cos_emb], dim=-1)
+        return torch.cat([sin_emb, cos_emb], dim=-1)[:, :dim]
     
     def label_emb(self,label,dim=1000):
         y = label * 1000
-        freqs = torch.pow(10000, torch.linspace(0, 1, dim // 2)).to(y.device)
+        freqs = torch.pow(10000, torch.linspace(0, 1, dim // 2 + dim % 2)).to(y.device)
         sin_emb = torch.sin(y[:, None] / freqs)
         cos_emb = torch.cos(y[:, None] / freqs)
-        return torch.cat([sin_emb, cos_emb], dim=-1)
+        return torch.cat([sin_emb, cos_emb], dim=-1)[:, :dim]
     
     def forward(self, x, t, label):
         # 输入：x.shape = [batch_size, seq_len, input_dim], t 和 label 是额外的输入
@@ -78,8 +78,7 @@ class Flow_Matching(nn.Module):
         for layer in self.layers:
             x = layer(x)
 
-        # 输出层前做池化（例如取均值或最后一层）
-        x = x.mean(dim=0)  # [batch_size, hidden_dim]
+        x = x.permute(1, 0, 2)
 
         # 输出层
         output = self.fc_out(x)  # [batch_size, output_dim]

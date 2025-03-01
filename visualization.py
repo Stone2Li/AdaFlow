@@ -1,71 +1,130 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
+from sklearn.decomposition import PCA
 import pickle
-def track_gene_scores(all_feature_scores, all_top_features, num_genes=1000, iterations=50):
-    """
-    跟踪每个基因在多次迭代中的得分变化，并填充缺失的得分
-    """
-    # 初始化字典存储每个基因的得分列表
-    gene_scores = {i: [] for i in range(num_genes)}
+
+def plot_feature_scores(all_feature_scores):
+    """画出迭代过程中特征得分的箱形图"""
+    plt.figure(figsize=(12, 6))
+    sns.boxplot(data=all_feature_scores.T)
+    plt.title("Feature Scores Distribution Across Iterations")
+    plt.xlabel("Iteration")
+    plt.ylabel("Feature Score")
+    plt.xticks(range(10), range(1, 11))
+    plt.savefig("./pictures/Feature Scores Distribution Across Iterations.png")
+
+def visualize_data_distribution(p_0, p_new, label_0, label_new, iterations):
+    """用PCA可视化生成样本呢和初始样本的散点图"""
+    fig, axes = plt.subplots(2, 5, figsize=(20, 8), sharex=True, sharey=True)
+    fig.suptitle("Data Distribution Across Iterations", fontsize=16)
+    pca = PCA(n_components=2)
+    p_0_flat = p_0.cpu().numpy().reshape(p_0.shape[0], -1)  # [n_samples, seq_len * input_dim]
+    p_flat = p_new.cpu().numpy().reshape(p_new.shape[0], -1)
+    label_0_np = label_0.cpu().numpy()
+    label_np = label_new.cpu().numpy()
     
-    # 遍历每次迭代
-    for iteration in range(iterations):
-        top_genes = all_top_features[iteration]  # 当前迭代选出的最显著基因的索引
-        feature_scores = all_feature_scores[iteration]  # 当前迭代中基因的得分
-        
-        # 为当前迭代未选中的基因填充NaN
-        for gene_idx in range(num_genes):
-            if gene_idx in top_genes:
-                index = np.where(top_genes == gene_idx)[0]
-                score = feature_scores[index]  # 获取当前基因的得分
+    for i, ax in enumerate(axes.flat):
+        if i < iterations:
+            start_idx = i * 64
+            end_idx = (i + 1) * 64
+            p_new_flat = p_flat[start_idx:end_idx]  # [64, seq_len * input_dim]
+            label_new_np = label_np[start_idx:end_idx]  # [64]
+            combined = np.vstack([p_0_flat, p_new_flat])
+            pca_result = pca.fit_transform(combined)
+            
+            old_pca = pca_result[:p_0.shape[0]]
+            new_pca = pca_result[p_0.shape[0]:]
+            
+            ax.scatter(old_pca[label_0_np==0, 0], old_pca[label_0_np==0, 1], c='blue', label='Old Health', alpha=0.5)
+            ax.scatter(old_pca[label_0_np==1, 0], old_pca[label_0_np==1, 1], c='red', label='Old Disease', alpha=0.5)
+            ax.scatter(new_pca[label_new_np==0, 0], new_pca[label_new_np==0, 1], c='lightblue', label='New Health', alpha=0.5)
+            ax.scatter(new_pca[label_new_np==1, 0], new_pca[label_new_np==1, 1], c='pink', label='New Disease', alpha=0.5)
+            ax.set_title(f"Iter {i+1}")
+            if i == 0:
+                ax.legend()
+            if i % 5 == 0:
+                ax.set_ylabel("PCA Component 2")
+            if i >= 5:
+                ax.set_xlabel("PCA Component 1")
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.savefig(f"./pictures/Data Distribution across Iterations.png")
+
+def plot_wasserstein_distance(all_wd_0, all_wd_1):
+    """Plot Wasserstein Distance across Iterations"""
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(all_wd_0) + 1), all_wd_0, label='Health Group', marker='o')
+    plt.plot(range(1, len(all_wd_1) + 1), all_wd_1, label='Disease Group', marker='o')
+    plt.title("Wasserstein Distance Across Iterations")
+    plt.xlabel("Iteration")
+    plt.ylabel("Wasserstein Distance")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("./pictures/Wasserstein Distance Across Iterations.png")
+
+def plot_top_features_stability(all_top_features):
+    """Plot the counts of genes across Iterations"""
+    feature_counts = np.zeros(1000)  # 假设有 1000 个基因
+    for top_features in all_top_features:
+        feature_counts[top_features] += 1
+    
+    plt.figure(figsize=(12, 6))
+    plt.bar(range(1000), feature_counts)
+    plt.title("Top Features Stability Across Iterations")
+    plt.xlabel("Feature Index")
+    plt.ylabel("Frequency in Top 50")
+    plt.savefig("./pictures/Top Features Stability Across Iterations.png")
+
+def plot_generated_feature_scores(p_0, p_new, label_0, label_new, top_features, iterations):
+    """Plot top 50 genes scores distribution across Iterations"""
+    fig, axes = plt.subplots(2, 5, figsize=(20, 8), sharey=True)
+    fig.suptitle("Generated Feature Scores Distribution Across Iterations", fontsize=16)
+    p_0_np = p_0.cpu().numpy().squeeze()
+    p_np = p_new.cpu().numpy().squeeze()
+    label_0_np = label_0.cpu().numpy()
+    label_np = label_new.cpu().numpy()
+    for i, ax in enumerate(axes.flat):
+        if i < iterations:
+            start_idx = i * 64
+            end_idx = (i + 1) * 64
+            p_new_np = p_np[start_idx:end_idx]  # [64, seq_len]
+            label_new_np = label_np[start_idx:end_idx]  # [64]
+            top_features = all_top_features[i]  # 当前迭代的 top 50 特征
+            
+            top_scores_old = p_0_np[:, top_features].mean(axis=1)  # [64]
+            top_scores_new = p_new_np[:, top_features].mean(axis=1)  # [64]
+            
+            data = [top_scores_old[label_0_np==0], top_scores_old[label_0_np==1], 
+                    top_scores_new[label_new_np==0], top_scores_new[label_new_np==1]]
+            sns.violinplot(data=data, ax=ax)
+            ax.set_xticks([0, 1, 2, 3], ['OH', 'OD', 'NH', 'ND'])  # Old Health, Old Disease, New Health, New Disease
+            ax.set_title(f"Iter {i+1}")
+            if i % 5 == 0:
+                ax.set_ylabel("Mean Score of Top Features")
             else:
-                score = np.nan  # 没有被选中的基因得分填充为NaN
-            gene_scores[gene_idx].append(score)
+                ax.set_ylabel("")
     
-    return gene_scores
-
-def visualize_gene_scores(gene_scores, iterations=50, top_n=10):
-    """
-    可视化前 top_n 个基因的得分变化
-    """
-    plt.figure(figsize=(15, 10))
-
-    # 选择最显著的 top_n 个基因（按顺序）
-    for gene_idx in range(top_n):
-        scores = gene_scores[gene_idx]
-        plt.plot(range(iterations), scores, label=f'Gene {gene_idx+1}')
-
-    plt.xlabel('Iterations')
-    plt.ylabel('Gene Score')
-    plt.title(f'Gene Score Changes Over {iterations} Iterations')
-    plt.legend(loc='upper right', bbox_to_anchor=(1.05, 1), shadow=True)
-    plt.tight_layout()
-    plt.show()
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.savefig("./pictures/Feature Scores Distribution for Top Features.png")
 
 if __name__=='__main__':
     # 读取保存的字典文件
-    with open('results.pkl', 'rb') as f:
+    with open('./results/origin/results.pkl', 'rb') as f:
         results = pickle.load(f)
-    iteration=10
+    iterations=10
+    n_samples = 64
     # 提取特征分数和前特征索引
     all_feature_scores = results['all_feature_scores']
     all_feature_scores = np.squeeze(all_feature_scores)
     all_top_features = results['all_top_features']
-    print(np.shape(all_feature_scores))
-    print(np.shape(all_top_features))
-    gene_scores = track_gene_scores(all_feature_scores, all_top_features, num_genes=1000, iterations=iteration)
-    # 保存 gene_scores 到 pickle 文件
-    with open('gene_scores.pkl', 'wb') as f:
-        pickle.dump(gene_scores, f)
-    # 统计每个基因的nan数量
-    nan_counts = {}
-    for gene_idx, scores in gene_scores.items():
-        nan_count = sum(np.isnan(score) for score in scores)
-        nan_counts[gene_idx] = nan_count
-    
-    # 按nan数量降序排序
-    sorted_genes = sorted(nan_counts.items(), key=lambda x: x[1], reverse=True)
-    
-    print("基因索引及其对应的nan数量(降序排列):")
-    for gene_idx, count in sorted_genes:
-        print(f"基因 {gene_idx}: {count} 个nan值")
+    all_wd_0 = results['all_wd_0']
+    all_wd_1 = results['all_wd_1']
+    samples = results['samples']
+    labels = results['labels']
+    samples = samples.squeeze(2)
+    plot_feature_scores(all_feature_scores)
+    plot_wasserstein_distance(all_wd_0, all_wd_1)
+    plot_top_features_stability(all_top_features)
+    visualize_data_distribution(samples[:n_samples, :], samples[n_samples:, :], labels[:n_samples], labels[n_samples:], iterations=iterations)
+    plot_generated_feature_scores(samples[:n_samples, :],samples[n_samples:, :], labels[:n_samples],labels[n_samples:], top_features=all_top_features, iterations=iterations)
