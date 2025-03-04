@@ -1,0 +1,9 @@
+seq_len: 1000 #DNA位点的数量
+hidden_len: 128 #embedding 维数
+num_heads: 16 #注意力头的数量
+num_layers: 4 #AttentionBlock的数量
+epochs: 30 #模型训练迭代次数
+base_batch_size: 16
+device: 'cuda:0'
+checkpoint_save_interval: 1
+save_path: './results/origin'
