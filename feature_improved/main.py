@@ -32,12 +32,19 @@ def calculate_featrue_score(data,label):
     top_indices = indices[:len(selected_idx) + 1]  # Include the feature that crosses the threshold    
     return top_indices, len(top_indices)"""
 #采用固定阈值版
-def select_top_feature(diff_scores, i, threshold = 0.001):
-    if threshold - i * 0.001 > 0.001:
-        threshold = threshold - i * 0.001
+def select_top_feature(diff_scores, i, columns, threshold = 0.001):
+    
+    #在里面加入原本特征名字的记录
+
+    if threshold - i * 0.002 > 0.001:
+        threshold = threshold - i * 0.002
     else: threshold = 0.001
+
     top_indices = torch.where(diff_scores < threshold)[0]  
-    return top_indices, len(top_indices)
+
+    columns = columns[top_indices]
+
+    return columns, top_indices, len(top_indices)
 
 def generate_samples(config, i, iteration=50, n_samples=64, seq_len=1000, input_dim=1):
     hidden_dim = config.get('hidden_dim', 128)
@@ -76,7 +83,7 @@ def compute_wd(old_data,new_data):
         wd = wasserstein_distance(old_pos, new_pos)
         wd_scores.append(wd)
     return np.mean(wd_scores)
-def apply_flow_matching(config,data,label,iterations):
+def apply_flow_matching(config, data, label, columns, iterations):
     p_0=data.to('cuda:0')  #initial data
     label_0=label.to('cuda:0')
     p = p_0.clone()
@@ -86,7 +93,7 @@ def apply_flow_matching(config,data,label,iterations):
     label = label_0.clone()
     all_feature_scores=[]
     all_top_features=[]
-    h = 0
+    count_n = 0
     #存储wasserstein距离
     all_wd_0=[]
     all_wd_1=[]
@@ -94,22 +101,22 @@ def apply_flow_matching(config,data,label,iterations):
         p = (p - p.min(dim=0, keepdim=True)[0]) / (p.max(dim=0, keepdim=True)[0] - p.min(dim=0, keepdim=True)[0])
         p_out = (p_out - p_out.min(dim=0, keepdim=True)[0]) / (p_out.max(dim=0, keepdim=True)[0] - p_out.min(dim=0, keepdim=True)[0])
         feature_scores=calculate_featrue_score(p, label)
-        top_features,top_n=select_top_feature(feature_scores, i, threshold=threshold) # 选出大于threshold的特征
+        columns, top_features, top_n=select_top_feature(feature_scores, i, columns, threshold=threshold) # 选出大于threshold的特征
         if (p.shape[1] == top_n and p.shape[1] <= 100)  or top_n < 2:
             print(f"Break on {i+1}th Iteration, we need {p.shape[1]} dimensions!")
             break
         if p.shape[1] == top_n :
-            h += 1
-        else : h = 0
-        if h == 5:
-            print(f'We need {p.shape[1]} dimensions , appear {h} times')
+            count_n += 1
+        else : count_n = 0
+        if count_n == 5:
+            print(f'We need {p.shape[1]} dimensions , appear {count_n} times')
             break
         if top_n == 0:
             print(f"Can't select feature less than {threshold} at {i+1}th Iteration, {p.shape[1]} features we have now!")
             break
         #改为保存所有基因的diffrence
         all_feature_scores.append(feature_scores.cpu().numpy()) 
-        all_top_features.append(top_features) #保存前50个特征索引
+        all_top_features.append(columns) #保存前50个特征索引
         p = p[:, top_features]
         p_out = p_out[:, top_features]
         train_flow_matching(config,p,label,i,top_n,iterations)
@@ -144,14 +151,17 @@ if __name__=="__main__":
     columns=df.iloc[:,0]
     data=pd.DataFrame(df.iloc[1:,1:].values.T,columns=list(columns[1:]))
     label=list(df.iloc[0,1:].apply(lambda x:1 if "Y" in x else 0 if 'Z' in x else -1))
+    all_columns = data.columns
+    columns = data.columns #记录原始特征的名字
     # 转换数据为Tensor
     data = torch.tensor(data.values.astype(np.float32), dtype=torch.float32)
     data = data.unsqueeze(2)
     label = torch.tensor(label, dtype=torch.long)
-    p, label, all_feature_scores,all_top_features,all_wd_0,all_wd_1 = apply_flow_matching(config, data, label, iteration)
+    p, label, all_feature_scores,all_top_features,all_wd_0,all_wd_1 = apply_flow_matching(config, data, label, columns, iteration)
     results = {
         'samples': p,
         'labels': label,
+        'columns': all_columns,
         'all_feature_scores': all_feature_scores,
         'all_top_features': all_top_features,
         'all_wd_0': all_wd_0,

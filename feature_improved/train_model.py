@@ -25,7 +25,6 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx], self.labels[idx]
 
-
 def train_flow_matching(config: str, data, labels, i, top_n, iterations=10):
     """训练Flow Matching模型"""
     # 获取配置
@@ -89,7 +88,12 @@ def train_flow_matching(config: str, data, labels, i, top_n, iterations=10):
             mean_diff = torch.mean(torch.abs(torch.mean(x_new[labels==0], dim=0) - torch.mean(x_new[labels==1], dim=0))) #在损失函数中加入两类的区别以防止丢失信息
             # 计算x_new到x_1每个样本距离的平均（欧式距离）
             distance = torch.mean(torch.norm(x_new - x_1, dim=1)) / x_1.shape[1]
-            loss = torch.exp(F.mse_loss(x_1-x_0, v_pred)+ 5 * distance - 0.01 * mean_diff)
+
+            # distance 限制生成的样本质量：若系数设置太低，则会导致筛选的特征主要用于区分生成的新样本，对原始样本区分不大
+            # mean_diff: 用于拉开两类样本，在原本样本差距不大的基本上，逐渐拉开样本，用于筛选关键特征
+            # Flow_matching_loss : 用于规定样本生成方式，便于之后生成
+
+            loss = torch.exp(1 * F.mse_loss(x_1-x_0, v_pred)+ 2 * distance + 0.0 * mean_diff)
             # 反向传播
             loss.backward()
 
